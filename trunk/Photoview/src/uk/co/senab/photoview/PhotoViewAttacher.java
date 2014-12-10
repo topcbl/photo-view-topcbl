@@ -18,8 +18,12 @@ package uk.co.senab.photoview;
 import static android.view.MotionEvent.ACTION_CANCEL;
 import static android.view.MotionEvent.ACTION_DOWN;
 import static android.view.MotionEvent.ACTION_UP;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.lang.ref.WeakReference;
-import topcbl.example.testproject.MoveGestureDetector;
+
 import topcbl.example.testproject.RotateGestureDetector;
 import uk.co.senab.photoview.gestures.OnGestureListener;
 import uk.co.senab.photoview.gestures.VersionedGestureDetector;
@@ -29,23 +33,23 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
-import android.graphics.Point;
 import android.graphics.Matrix.ScaleToFit;
-import android.graphics.PointF;
+import android.graphics.Point;
 import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Environment;
 import android.util.FloatMath;
 import android.util.Log;
 import android.view.Display;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
-import android.view.ScaleGestureDetector;
 import android.view.View;
-import android.view.WindowManager;
 import android.view.View.OnLongClickListener;
 import android.view.ViewParent;
 import android.view.ViewTreeObserver;
+import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.widget.ImageView;
@@ -291,13 +295,23 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	public void setRotationTo(float degrees) {
 		mSuppMatrix.setRotate(degrees % 360);
 		checkAndDisplayMatrix();
+		// mSuppMatrix.setRotate(degrees % 360,
+		// getImageViewWidth(getImageView()) >> 1,
+		// getImageViewHeight(getImageView()) >> 1);
+		// setImageViewMatrix(getDrawMatrix());
 	}
 
 	@Override
 	public void setRotationBy(float degrees) {
-		mSuppMatrix.postRotate(degrees % 360, mScreenWidth/2, mScreenHeight/2);
-		// checkAndDisplayMatrix();
-		setImageViewMatrix(getDrawMatrix());
+		mSuppMatrix.postRotate(degrees % 360,
+				getImageViewWidth(getImageView()) >> 1,
+				getImageViewHeight(getImageView()) >> 1);
+		// mSuppMatrix.postRotate(degrees % 360);
+		checkAndDisplayMatrix();
+		// mSuppMatrix.postRotate(degrees % 360,
+		// getImageViewWidth(getImageView()) >> 1,
+		// getImageViewHeight(getImageView()) >> 1);
+		// setImageViewMatrix(getDrawMatrix());
 	}
 
 	public ImageView getImageView() {
@@ -634,6 +648,22 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		}
 	}
 
+	public void setScaleFix(float scale) {
+		ImageView imageView = getImageView();
+		if (null != imageView) {
+			if (scale < mMinScale || scale > mMaxScale) {
+				LogManager
+						.getLogger()
+						.i(LOG_TAG,
+								"Scale must be within the range of minScale and maxScale");
+				return;
+			}
+			imageView.post(new AnimatedZoomRunnable(getScale(), scale,
+					getImageViewWidth(getImageView()) >> 1,
+					getImageViewHeight(getImageView()) >> 1));
+		}
+	}
+
 	@Override
 	public void setScaleType(ScaleType scaleType) {
 		if (isSupportedScaleType(scaleType) && scaleType != mScaleType) {
@@ -836,7 +866,6 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	private void setImageViewMatrix(Matrix matrix) {
 		ImageView imageView = getImageView();
 		if (null != imageView) {
-
 			checkImageViewScaleType();
 			imageView.setImageMatrix(matrix);
 
@@ -1136,13 +1165,16 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	private float mRotationDegrees = 0.f;
 	private RotateGestureDetector mRotateDetector;
 	private boolean isRotate = false;
-	private int mScreenWidth, mScreenHeight;
+	private int SCREEN_WIDTH, SCREEN_HEIGHT;
+	public static final int ROTATE_DURATION = 200;
 
 	private class RotateListener extends
 			RotateGestureDetector.SimpleOnRotateGestureListener {
 		@Override
 		public boolean onRotate(RotateGestureDetector detector) {
 			if (isRotate) {
+				mRotationDegrees -= detector.getRotationDegreesDelta();
+				// setRotationTo(mRotationDegrees);
 				setRotationBy(-detector.getRotationDegreesDelta());
 			} else {
 				float delta = detector.getRotationDegreesDelta();
@@ -1155,9 +1187,35 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 
 		@Override
 		public void onRotateEnd(RotateGestureDetector detector) {
-			isRotate = false;
+			if (isRotate) {
+				isRotate = false;
+				RectF rect = getDisplayRect();
+				float endDegrees = mRotationDegrees;
+				if (Math.abs(endDegrees) % 90 <= 45)
+					endDegrees = ((int) endDegrees / 90) * 90;
+				else
+					endDegrees = ((int) endDegrees / 90 + endDegrees >= 0 ? 1
+							: -1) * 90;
+				getImageView().post(new AnimatedRotateRunnable(endDegrees, mRotationDegrees));
+				getImageView().post(
+						new AnimatedZoomRunnable(getScale(), mMinScale, rect
+								.centerX(), rect.centerY()));
+				mRotationDegrees = endDegrees;
+			}
 			super.onRotateEnd(detector);
 		}
+	}
+
+	public float getRotationDegrees() {
+		return mRotationDegrees;
+	}
+
+	public void addRotationDegrees(float delta) {
+		this.mRotationDegrees += delta;
+	}
+
+	public void setRotationDegrees(float d) {
+		this.mRotationDegrees = d;
 	}
 
 	@SuppressLint("NewApi")
@@ -1169,13 +1227,76 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2) {
 			Point size = new Point();
 			windowManager.getDefaultDisplay().getSize(size);
-			mScreenWidth = GraphicUtils.convertDpToPixel(context, size.x);
-			mScreenHeight = GraphicUtils.convertDpToPixel(context, size.y);
+			SCREEN_WIDTH = GraphicUtils.convertDpToPixel(context, size.x);
+			SCREEN_HEIGHT = GraphicUtils.convertDpToPixel(context, size.y);
 		} else {
 			Display d = windowManager.getDefaultDisplay();
-			mScreenWidth = GraphicUtils.convertDpToPixel(context, d.getWidth());
-			mScreenHeight = GraphicUtils.convertDpToPixel(context, d.getHeight());
+			SCREEN_WIDTH = GraphicUtils.convertDpToPixel(context, d.getWidth());
+			SCREEN_HEIGHT = GraphicUtils.convertDpToPixel(context,
+					d.getHeight());
 		}
 	}
 
+	public Bitmap getCropImage() {
+		Bitmap bmp = ((BitmapDrawable) getImageView().getDrawable())
+				.getBitmap();
+		return Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(),
+				mDrawMatrix, true);
+	}
+
+	public File createFileFromBitmap(Bitmap bitmap) {
+		try {
+			ByteArrayOutputStream stream = new ByteArrayOutputStream();
+			bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+			File outFile = new File(Environment.getExternalStorageDirectory()
+					+ "/top_image.jpg");
+			FileOutputStream outStream = null;
+			outStream = new FileOutputStream(outFile);
+			outStream.write(stream.toByteArray());
+			outStream.flush();
+			outStream.close();
+			return outFile;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	private class AnimatedRotateRunnable implements Runnable {
+
+		private final float mEndDegrees, mStartDegrees;
+		private final long mStartTime;
+
+		public AnimatedRotateRunnable(final float endDegrees, final float startDegrees) {
+			mEndDegrees = endDegrees;
+			mStartTime = System.currentTimeMillis();
+			mStartDegrees = startDegrees;
+		}
+
+		@Override
+		public void run() {
+			ImageView imageView = getImageView();
+			if (imageView == null) {
+				return;
+			}
+
+			float t = interpolate();
+			float rotateDegree = mStartDegrees + t * (mEndDegrees - mStartDegrees);
+			mSuppMatrix.setRotate(rotateDegree);
+			checkAndDisplayMatrix();
+
+			// We haven't hit our target scale yet, so post ourselves again
+			if (t < 1f) {
+				Compat.postOnAnimation(imageView, this);
+			}
+		}
+
+		private float interpolate() {
+			float t = 1f * (System.currentTimeMillis() - mStartTime)
+					/ ROTATE_DURATION;
+			t = Math.min(1f, t);
+			t = sInterpolator.getInterpolation(t);
+			return t;
+		}
+	}
 }
