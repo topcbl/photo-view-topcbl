@@ -1332,12 +1332,19 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		this.mRotationDegrees = d;
 	}
 
+	/**
+	 * Reset the photoview: scale, rotation, so on ...
+	 */
 	public void resetZoom() {
+		PhotoView iv = (PhotoView) getImageView();
 		RectF rect = getDisplayRect();
-		getImageView().post(
-				new AnimatedZoomRunnable(getScale(), mMinScale, rect.centerX(),
-						rect.centerY()));
-		getImageView().post(new AnimatedRotateRunnable(0, mRotationDegrees));
+		if (mRotationDegrees % 180 != 0)
+			mMinScale = getScaleRatioFixScreen((float) iv.getCoreWidth(),
+					(float) iv.getCoreHeight(), getImageViewWidth(iv),
+					getImageViewHeight(iv), mMinScale, 0);
+		iv.post(new AnimatedRotateRunnable(0, mRotationDegrees));
+		iv.post(new AnimatedZoomRunnable(getScale(), mMinScale, rect.centerX(),
+				rect.centerY()));
 		mRotationDegrees = 0;
 	}
 
