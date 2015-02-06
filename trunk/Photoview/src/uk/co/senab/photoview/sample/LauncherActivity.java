@@ -39,7 +39,8 @@ public class LauncherActivity extends ListActivity {
         switch (position) {
             default:
             case 0:
-                c = SimpleSampleActivity.class;
+//                c = SimpleSampleActivity.class;
+                c = ViewPagerActivity.class;
                 break;
             case 1:
                 c = ViewPagerActivity.class;
