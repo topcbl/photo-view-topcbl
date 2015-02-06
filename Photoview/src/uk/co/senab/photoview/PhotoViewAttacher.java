@@ -147,6 +147,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	private OnPhotoTapListener mPhotoTapListener;
 	private OnViewTapListener mViewTapListener;
 	private OnLongClickListener mLongClickListener;
+	private OnRotationListener mRotateListener;
 
 	private int mIvTop, mIvRight, mIvBottom, mIvLeft;
 	private FlingRunnable mCurrentFlingRunnable;
@@ -196,7 +197,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		// Setup Gesture Detectors
 		mRotateDetector = new RotateGestureDetector(imageView.getContext(),
 				new RotateListener());
-		getScreenSize();
+		// getScreenSize();
 	}
 
 	@Override
@@ -533,7 +534,9 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 				handled = true;
 			}
 		}
-
+		// get event change the photo, tmp use rotate event instead write news
+		if (handled)
+			mRotateListener.onRotated(999);
 		return handled;
 	}
 
@@ -586,6 +589,11 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	@Override
 	public void setOnMatrixChangeListener(OnMatrixChangedListener listener) {
 		mMatrixChangeListener = listener;
+	}
+
+	@Override
+	public void setOnRotationListener(OnRotationListener listener) {
+		mRotateListener = listener;
 	}
 
 	@Override
@@ -980,6 +988,22 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 	}
 
 	/**
+	 * Register a callback to be invoked when this view is rotated. An example
+	 * would be the user roll the Photo.
+	 * 
+	 */
+	public static interface OnRotationListener {
+		/**
+		 * Register a callback to be invoked when this view is rotated. An
+		 * example would be the user roll the Photo.
+		 * 
+		 * @param rect
+		 *            - Rectangle displaying the Drawable's new bounds.
+		 */
+		void onRotated(float degrees);
+	}
+
+	/**
 	 * Interface definition for a callback to be invoked when the Photo is
 	 * tapped with a single tap.
 	 * 
@@ -1163,10 +1187,18 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 
 	// ========================== TOPCBL CODE ==============================
 	private float mRotationDegrees = 0.f;
+	private float mBeforeRotateDegrees = 0.f;
 	private RotateGestureDetector mRotateDetector;
 	private boolean isRotate = false;
 	private int SCREEN_WIDTH, SCREEN_HEIGHT;
 	public static final int ROTATE_DURATION = 200;
+
+	public void resetParam() {
+		mRotationDegrees = 0f;
+		mBeforeRotateDegrees = 0.f;
+		isRotate = false;
+		mMinScale = DEFAULT_MIN_SCALE;
+	}
 
 	private class RotateListener extends
 			RotateGestureDetector.SimpleOnRotateGestureListener {
@@ -1178,7 +1210,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 				setRotationBy(-detector.getRotationDegreesDelta());
 			} else {
 				float delta = detector.getRotationDegreesDelta();
-				if (delta > 5 || delta < -5) {
+				if (delta > 3 || delta < -3) {
 					isRotate = true;
 				}
 			}
@@ -1186,24 +1218,106 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		}
 
 		@Override
+		public boolean onRotateBegin(RotateGestureDetector detector) {
+			mBeforeRotateDegrees = mRotationDegrees;
+			return super.onRotateBegin(detector);
+		}
+
+		@Override
 		public void onRotateEnd(RotateGestureDetector detector) {
 			if (isRotate) {
 				isRotate = false;
 				RectF rect = getDisplayRect();
+				PhotoView iv = (PhotoView) getImageView();
 				float endDegrees = mRotationDegrees;
 				if (Math.abs(endDegrees) % 90 <= 45)
 					endDegrees = ((int) endDegrees / 90) * 90;
 				else
-					endDegrees = ((int) endDegrees / 90 + endDegrees >= 0 ? 1
-							: -1) * 90;
-				getImageView().post(new AnimatedRotateRunnable(endDegrees, mRotationDegrees));
-				getImageView().post(
-						new AnimatedZoomRunnable(getScale(), mMinScale, rect
-								.centerX(), rect.centerY()));
+					endDegrees = ((int) endDegrees / 90 + (endDegrees >= 0 ? 1
+							: -1)) * 90;
+				// check whether photo is rotate 90 or not
+				if ((endDegrees - mBeforeRotateDegrees) % 180 != 0)
+					mMinScale = getScaleRatioFixScreen(
+							(float) iv.getCoreWidth(),
+							(float) iv.getCoreHeight(), getImageViewWidth(iv),
+							getImageViewHeight(iv), mMinScale, endDegrees);
+				iv.post(new AnimatedRotateRunnable(endDegrees, mRotationDegrees));
+				iv.post(new AnimatedZoomRunnable(getScale(), mMinScale, rect
+						.centerX(), rect.centerY()));
 				mRotationDegrees = endDegrees;
+				mRotateListener.onRotated(mRotationDegrees);
 			}
 			super.onRotateEnd(detector);
 		}
+	}
+
+	/**
+	 * This is a hard method, that will figure out the scale ratio to fix the
+	 * image with screen device
+	 * 
+	 * @param imgWidth
+	 * @param imgHeight
+	 * @param screenWitdth
+	 * @param screenHeight
+	 * @param scale
+	 * @param degreesImg
+	 * @return
+	 */
+	private float getScaleRatioFixScreen(float imgWidth, float imgHeight,
+			float screenWitdth, float screenHeight, float scale,
+			float degreesImg) {
+		float fixScale = scale;
+		// check image is fixing width screen or height screen
+		if (imgWidth / imgHeight > screenWitdth / screenHeight) {
+			// check ratio width and height to know whether image should fix
+			// height or width of screen
+			if (Math.abs((degreesImg % 180)) == 90
+					&& (imgHeight / imgWidth > screenWitdth / screenHeight)) {
+				fixScale = fixScale == 1 ? imgWidth / imgHeight : 1;
+			} else if (Math.abs((degreesImg % 180)) == 0
+					&& (imgWidth / imgHeight > screenWitdth / screenHeight)) {
+				fixScale = fixScale == 1 ? imgWidth / imgHeight : 1;
+			} else {
+				fixScale = fixScale == 1 ? screenHeight / screenWitdth : 1;
+			}
+		} else {
+			// check ratio width and height to know whether image should fix
+			// height or width of screen
+			if (Math.abs((degreesImg % 180)) == 90
+					&& (imgHeight / imgWidth > screenWitdth / screenHeight)) {
+				fixScale = fixScale == 1 ? screenWitdth / screenHeight : 1;
+			} else if (Math.abs((degreesImg % 180)) == 0
+					&& (imgWidth / imgHeight > screenWitdth / screenHeight)) {
+				fixScale = fixScale == 1 ? screenWitdth / screenHeight : 1;
+			} else {
+				fixScale = fixScale == 1 ? imgHeight / imgWidth : 1;
+			}
+		}
+		return fixScale;
+	}
+
+	/**
+	 * Rotate image
+	 * 
+	 * @param leftOrRight
+	 *            = 1 if rotate left and 0 if rotate right
+	 */
+	public void rotateImage(int leftOrRight) {
+		PhotoView iv = (PhotoView) getImageView();
+		RectF rect = getDisplayRect();
+		float endDegrees;
+		if (leftOrRight == 0)
+			endDegrees = mRotationDegrees + 90;
+		else
+			endDegrees = mRotationDegrees - 90;
+		mMinScale = getScaleRatioFixScreen((float) iv.getCoreWidth(),
+				(float) iv.getCoreHeight(), getImageViewWidth(iv),
+				getImageViewHeight(iv), mMinScale, endDegrees);
+		iv.post(new AnimatedRotateRunnable(endDegrees, mRotationDegrees));
+		iv.post(new AnimatedZoomRunnable(getScale(), mMinScale, rect.centerX(),
+				rect.centerY()));
+		mRotationDegrees = endDegrees;
+		mRotateListener.onRotated(mRotationDegrees);
 	}
 
 	public float getRotationDegrees() {
@@ -1216,6 +1330,15 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 
 	public void setRotationDegrees(float d) {
 		this.mRotationDegrees = d;
+	}
+
+	public void resetZoom() {
+		RectF rect = getDisplayRect();
+		getImageView().post(
+				new AnimatedZoomRunnable(getScale(), mMinScale, rect.centerX(),
+						rect.centerY()));
+		getImageView().post(new AnimatedRotateRunnable(0, mRotationDegrees));
+		mRotationDegrees = 0;
 	}
 
 	@SuppressLint("NewApi")
@@ -1237,37 +1360,13 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		}
 	}
 
-	public Bitmap getCropImage() {
-		Bitmap bmp = ((BitmapDrawable) getImageView().getDrawable())
-				.getBitmap();
-		return Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(),
-				mDrawMatrix, true);
-	}
-
-	public File createFileFromBitmap(Bitmap bitmap) {
-		try {
-			ByteArrayOutputStream stream = new ByteArrayOutputStream();
-			bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
-			File outFile = new File(Environment.getExternalStorageDirectory()
-					+ "/top_image.jpg");
-			FileOutputStream outStream = null;
-			outStream = new FileOutputStream(outFile);
-			outStream.write(stream.toByteArray());
-			outStream.flush();
-			outStream.close();
-			return outFile;
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return null;
-	}
-
 	private class AnimatedRotateRunnable implements Runnable {
 
 		private final float mEndDegrees, mStartDegrees;
 		private final long mStartTime;
 
-		public AnimatedRotateRunnable(final float endDegrees, final float startDegrees) {
+		public AnimatedRotateRunnable(final float endDegrees,
+				final float startDegrees) {
 			mEndDegrees = endDegrees;
 			mStartTime = System.currentTimeMillis();
 			mStartDegrees = startDegrees;
@@ -1281,7 +1380,8 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 			}
 
 			float t = interpolate();
-			float rotateDegree = mStartDegrees + t * (mEndDegrees - mStartDegrees);
+			float rotateDegree = mStartDegrees + t
+					* (mEndDegrees - mStartDegrees);
 			mSuppMatrix.setRotate(rotateDegree);
 			checkAndDisplayMatrix();
 

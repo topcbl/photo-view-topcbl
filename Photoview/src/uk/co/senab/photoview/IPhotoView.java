@@ -202,6 +202,14 @@ public interface IPhotoView {
      * @param listener - Listener to be registered.
      */
     void setOnMatrixChangeListener(PhotoViewAttacher.OnMatrixChangedListener listener);
+    
+    /**
+     * Register a callback to be invoked when this view is rotated. An example would
+     * be the user roll the Photo.
+     *
+     * @param listener - Listener to be registered.
+     */
+    void setOnRotationListener(PhotoViewAttacher.OnRotationListener listener);
 
     /**
      * Register a callback to be invoked when the Photo displayed by this View is tapped with a
