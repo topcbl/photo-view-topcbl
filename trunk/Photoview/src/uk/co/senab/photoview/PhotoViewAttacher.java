@@ -536,7 +536,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		}
 		// get event change the photo, tmp use rotate event instead write news
 		if (handled)
-			mRotateListener.onRotated(999);
+			mRotateListener.onRotated(999, false);
 		return handled;
 	}
 
@@ -1000,7 +1000,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		 * @param rect
 		 *            - Rectangle displaying the Drawable's new bounds.
 		 */
-		void onRotated(float degrees);
+		void onRotated(float degrees, boolean hasRotated);
 	}
 
 	/**
@@ -1245,7 +1245,8 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 				iv.post(new AnimatedZoomRunnable(getScale(), mMinScale, rect
 						.centerX(), rect.centerY()));
 				mRotationDegrees = endDegrees;
-				mRotateListener.onRotated(mRotationDegrees);
+				boolean hasRotate = Math.abs(endDegrees - mBeforeRotateDegrees) >= 45L ? true : false;
+				mRotateListener.onRotated(mRotationDegrees, hasRotate);
 			}
 			super.onRotateEnd(detector);
 		}
@@ -1310,6 +1311,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 			endDegrees = mRotationDegrees + 90;
 		else
 			endDegrees = mRotationDegrees - 90;
+		boolean hasRotate = Math.abs(endDegrees - mRotationDegrees) >= 45L ? true : false;
 		mMinScale = getScaleRatioFixScreen((float) iv.getCoreWidth(),
 				(float) iv.getCoreHeight(), getImageViewWidth(iv),
 				getImageViewHeight(iv), mMinScale, endDegrees);
@@ -1317,7 +1319,7 @@ public class PhotoViewAttacher implements IPhotoView, View.OnTouchListener,
 		iv.post(new AnimatedZoomRunnable(getScale(), mMinScale, rect.centerX(),
 				rect.centerY()));
 		mRotationDegrees = endDegrees;
-		mRotateListener.onRotated(mRotationDegrees);
+		mRotateListener.onRotated(mRotationDegrees, hasRotate);
 	}
 
 	public float getRotationDegrees() {
