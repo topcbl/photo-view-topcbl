@@ -36,6 +36,7 @@ public class PhotoView extends ImageView implements IPhotoView {
 	private ScaleType mPendingScaleType;
 	private int mCoreHeight;
 	private int mCoreWidth;
+	private boolean hasChanged = false;
 
 	public PhotoView(Context context) {
 		this(context, null);
@@ -338,6 +339,14 @@ public class PhotoView extends ImageView implements IPhotoView {
 			setCoreHeight(tmp);
 		}
 		mAttacher.resetParam();
+	}
+
+	public boolean hasChanged() {
+		return hasChanged;
+	}
+
+	public void setChanged(boolean hasChanged) {
+		this.hasChanged = hasChanged;
 	}
 
 }
